@@ -45,6 +45,10 @@ typedef enum {
   SCROLLING
 } Mode;
 
+inline int rowPin(const int row) {
+  return ROW_START_PIN - row;
+}
+
 Mode mode = SCROLLING;
 Direction dir = LEFT;
 
@@ -158,14 +162,14 @@ int onRow = -1;
 // Handle descending pin order
 inline void rowOff() {
   if (onRow != -1) {
-    digitalWrite(ROW_START_PIN - onRow,LOW);
+    digitalWrite(rowPin(onRow),LOW);
     onRow = -1;
   }
 }
 
 
 inline void rowOn(int row) {
-  digitalWrite(ROW_START_PIN - row,HIGH);
+  digitalWrite(rowPin(onRow),HIGH);
   onRow = row;
 }
 
@@ -179,8 +183,8 @@ void setup() {
   // DATA 2: A2
   // DATA 3: A3
   for (int i = 0; i < columns; i++) {
-    pinMode(i+ROW_START_PIN,OUTPUT);
-    digitalWrite(i+ROW_START_PIN,LOW);
+    pinMode(rowPin(i),OUTPUT);
+    digitalWrite(rowPin(i),LOW);
   }
   onRow = -1;
 
