@@ -142,12 +142,6 @@ public:
       if ( (p[i] & mask) != 0 ) {
         rowbuf[i] |= 1<<1;
       }
-      if ( (p[i+columns] & mask) != 0 ) {
-        rowbuf[i] |= 1<<2;
-      }
-      if ( (p[i+(2*columns)] & mask) != 0 ) {
-        rowbuf[i] |= 1<<3;
-      }
     }
     return rowbuf;
   }
@@ -178,16 +172,11 @@ void setup() {
   b.flip();
   b.erase();
   //b.flip();
-  // CLOCK PIN: A0
-  // DATA 1: A1
-  // DATA 2: A2
-  // DATA 3: A3
-  for (int i = 0; i < columns; i++) {
+  for (int i = 0; i < rows; i++) {
     pinMode(rowPin(i),OUTPUT);
     digitalWrite(rowPin(i),LOW);
   }
   onRow = -1;
-
 
   pinMode(CLOCK_PIN,OUTPUT);
   pinMode(DATA_PIN,OUTPUT);
@@ -198,12 +187,12 @@ void setup() {
   // 32000 cycles per interrupt
   // Prescaler: 1/64 OC: 500
   // CS[2:0] = 0b011
-  // WGM[3:0] = 0b0100 CTC mode (top is OCR3A)
+  // WGM[3:0] = 0b0100 CTC mode (top is OCR1A)
   
   TCCR1A = 0b00000000;
   TCCR1B = 0b00001011;
   TIMSK1 = _BV(OCIE1A);
-  OCR1A = 200;
+  OCR1A = 500;
 
   Serial.begin(9600);
   Serial.println("Meet the press, suckers.");
@@ -221,16 +210,6 @@ static char command[CMD_SIZE+1];
 static int cmdIdx = 0;
 
 const static uint16_t DEFAULT_MSG_OFF = 0x10;
-
-int eatInt(char*& p) {
-  int v = 0;
-  while (*p >= '0' && *p <= '9') {
-    v *= 10;
-    v += *p - '0';
-    p++;
-  }
-  return v;
-}
 
 enum {
   CODE_OK = 0,
@@ -300,18 +279,6 @@ static int yoff = 0;
 
 static int frames = 0;
 
-void doClock() {
-  char buf[26];
-  DateTime dt = RTC.now();
-  sprintf(buf,"%02d:%02d:%02d",
-	  dt.hour(), dt.minute(), dt.second());
-  const int halfcol = columns / 2;
-  int padding = 12;
-  for (int j = 0; j < 6; j++) {
-    b.writeStr(buf,padding+(j*halfcol),0);
-  }
-}
-
 void loop() {
   while (frames < scroll_delay) {
     int nextChar = Serial2.read();
@@ -330,7 +297,6 @@ void loop() {
     }
   }
   frames = 0;
-  tune();
   b.erase();
   if (mode == SCROLLING) {
     if (message_timeout == 0) {
@@ -363,15 +329,11 @@ void loop() {
     if (xoff >= modules*columns) { xoff -= modules*columns; }
     if (yoff < 0) { yoff += 7; }
     if (yoff >= 7) { yoff -= 7; }
-  } else if (mode == CLOCK) {
-    doClock();
   }
   b.flip();
 }
 
-#define CLOCK_BITS (1<<0 | 1<<4 | 1<<5)
-
-ISR(TIMER3_COMPA_vect)
+ISR(TIMER1_COMPA_vect)
 {
   uint8_t row = curRow % 7;
   //  uint8_t mask = 1 << (7-row);
@@ -379,12 +341,9 @@ ISR(TIMER3_COMPA_vect)
   uint8_t* p = b.buildRowBuf(row);
   rowOff();
   for (int i = 0; i < columns; i++) {
-    __asm__("nop\n\t");
-    PORTA = ~(p[i] | CLOCK_BITS);
-    __asm__("nop\n\t");
-    PORTA = ~(p[i] & ~CLOCK_BITS);
-    __asm__("nop\n\t");
-    PORTA = ~(p[i] | CLOCK_BITS);
+    digitalWrite(CLOCK_PIN,HIGH);
+    digitalWrite(DATA_PIN,(p[i]==0)?LOW:HIGH);
+    digitalWrite(CLOCK_PIN,LOW);
   }
   rowOn(curRow%7);
   curRow++;
