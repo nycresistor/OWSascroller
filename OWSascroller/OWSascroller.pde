@@ -196,10 +196,10 @@ void setup() {
   // CS[2:0] = 0b011
   // WGM[3:0] = 0b0100 CTC mode (top is OCR3A)
   
-  TCCR3A = 0b00000000;
-  TCCR3B = 0b00001011;
-  TIMSK3 = _BV(OCIE3A);
-  OCR3A = 200;
+  TCCR1A = 0b00000000;
+  TCCR1B = 0b00001011;
+  TIMSK1 = _BV(OCIE1A);
+  OCR1A = 200;
 
   Serial.begin(9600);
   Serial.println("Meet the press, suckers.");
