@@ -1,4 +1,3 @@
-
 // CLOCK PIN: A0 (22)
 // DATA 1: A1 (23)
 // DATA 2: A2 (24)
@@ -6,19 +5,20 @@
 // CLOCK PIN: A4 (26)
 // CLOCK PIN: A5 (27)
 
-#define ROW_START_PIN 2
-// ROW 0: 2
-// ROW 1: 3
-// ROW 2: 4
-// ROW 3: 5
+// Connector pins 1-7 are tied to digital output pins 10-4 (desc)
+#define ROW_START_PIN 10
+// ROW 0: 10
+// ROW 1: 9
+// ROW 2: 8
+// ROW 3: 7
 // ROW 4: 6
-// ROW 5: 7
-// ROW 6: 8
+// ROW 5: 5
+// ROW 6: 4
 
-// CLOCK: 9
-#define CLOCK_PIN 9
-// DATA: 10
-#define DATA_PIN 10
+// CLOCK: 3 ?
+#define CLOCK_PIN 3
+// DATA: 2 ?
+#define DATA_PIN 2
 
 #define GREETING "!s command to set default message"
 
@@ -155,15 +155,17 @@ static Bitmap b;
 
 int onRow = -1;
 
+// Handle descending pin order
 inline void rowOff() {
   if (onRow != -1) {
-    digitalWrite(onRow+ROW_START_PIN,LOW);
+    digitalWrite(ROW_START_PIN - onRow,LOW);
     onRow = -1;
   }
 }
 
+
 inline void rowOn(int row) {
-  digitalWrite(row+ROW_START_PIN,HIGH);
+  digitalWrite(ROW_START_PIN - row,HIGH);
   onRow = row;
 }
 
