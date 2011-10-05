@@ -6,7 +6,7 @@
 // CLOCK PIN: A5 (27)
 
 // Connector pins 1-7 are tied to digital output pins 10-4 (desc)
-#define ROW_START_PIN 10
+#define ROW_START_PIN 4
 // ROW 0: 10
 // ROW 1: 9
 // ROW 2: 8
@@ -15,10 +15,26 @@
 // ROW 5: 5
 // ROW 6: 4
 
-// CLOCK: 3 ?
-#define CLOCK_PIN 3
-// DATA: 2 ?
-#define DATA_PIN 2
+// CLOCK: 2 - PD2
+#define CLOCK_PIN 2
+// DATA: 3 - PD3
+#define DATA_PIN 3
+
+inline void clockHigh() {
+  PORTD |= _BV(CLOCK_PIN);
+}
+
+inline void clockLow() {
+  PORTD &= ~_BV(CLOCK_PIN);
+}
+
+inline void dataHigh() {
+  PORTD |= _BV(DATA_PIN);
+}
+
+inline void dataLow() {
+  PORTD &= ~_BV(DATA_PIN);
+}
 
 #define GREETING "!s command to set default message"
 
@@ -46,7 +62,7 @@ typedef enum {
 } Mode;
 
 inline int rowPin(const int row) {
-  return ROW_START_PIN - row;
+  return ROW_START_PIN + row;
 }
 
 Mode mode = SCROLLING;
@@ -56,16 +72,13 @@ Direction dir = LEFT;
 int scroll_delay = 8;
 
 uint8_t b1[columns*modules];
-uint8_t b2[columns*modules];
 uint8_t rowbuf[columns];
 
 class Bitmap {
   uint8_t* data;
-  uint8_t* dpl;
 public:
   Bitmap() {
     data = b1;
-    dpl = b2;
   }
   void erase() {
     for (int i = 0; i < columns*modules; i++) data[i] = 0;
@@ -126,13 +139,6 @@ public:
     }
     return x;
   }
-  void flip() {
-    cli();
-    uint8_t* tmp = data;
-    data = dpl;
-    dpl = tmp;
-    sei();
-  }
   
   uint8_t* buildRowBuf(int row) {
     uint8_t* p = getDisplay();
@@ -146,7 +152,7 @@ public:
     return rowbuf;
   }
   
-  uint8_t* getDisplay() { return dpl; }
+  uint8_t* getDisplay() { return data; }
 };
 
 static Bitmap b;
@@ -163,15 +169,12 @@ inline void rowOff() {
 
 
 inline void rowOn(int row) {
-  digitalWrite(rowPin(onRow),HIGH);
   onRow = row;
+  digitalWrite(rowPin(onRow),HIGH);
 }
 
 void setup() {
   b.erase();
-  b.flip();
-  b.erase();
-  //b.flip();
   for (int i = 0; i < rows; i++) {
     pinMode(rowPin(i),OUTPUT);
     digitalWrite(rowPin(i),LOW);
@@ -216,27 +219,6 @@ enum {
   CODE_ERROR = -1
 };
 
-int8_t response(const char* message, int8_t code) {
-  const static char* errMsg = "ERROR";
-  const static char* okMsg = "OK";
-  const char* prefix = (code == CODE_OK)?okMsg:errMsg;
-  Serial2.print(prefix);
-  if (message != NULL) {
-    Serial2.print(": ");
-    Serial2.print(message);
-  }
-  Serial2.print("\n");
-  return code;
-}
-
-int8_t fail(const char* message = NULL) {
-  return response(message, CODE_ERROR);
-}
-
-int8_t succeed(const char* message = NULL) {
-  return response(message, CODE_OK);
-}
-
 int8_t processCommand() {
   if (command[0] == '!') {
     // command processing
@@ -247,10 +229,10 @@ int8_t processCommand() {
 	EEPROM.write(DEFAULT_MSG_OFF-2+i,command[i]);
 	if (command[i] == '\0') break;
       }
-      return succeed(command+2);
+      return CODE_OK;
     case 'S':
       // Get current scroller status
-      return succeed(message);
+      return CODE_OK;
     case 'd':
       switch (command[2]) {
       case 'l': dir = LEFT; break;
@@ -258,9 +240,9 @@ int8_t processCommand() {
       // Up and down have been disabled
       case 'n': dir = NONE; break;
       default:
-	return fail("Unrecognized direction");
+	return CODE_ERROR;
       }
-      return succeed();
+      return CODE_OK;
     }
   } else {
     // message
@@ -270,7 +252,7 @@ int8_t processCommand() {
       message[i] = command[i];
       if (command[i] == '\0') break;
     }
-    return succeed();
+    return CODE_OK;
   }
 }
 
@@ -280,8 +262,8 @@ static int yoff = 0;
 static int frames = 0;
 
 void loop() {
-  while (frames < scroll_delay) {
-    int nextChar = Serial2.read();
+  while (false && frames < scroll_delay) {
+    int nextChar = Serial.read();
     while (nextChar != -1) {
       if (nextChar == '\n') {
         command[cmdIdx] = '\0';
@@ -292,7 +274,7 @@ void loop() {
         command[cmdIdx] = nextChar;
         cmdIdx++;
         if (cmdIdx > CMD_SIZE) cmdIdx = CMD_SIZE;
-        nextChar = Serial2.read();
+        nextChar = Serial.read();
       }
     }
   }
@@ -330,20 +312,30 @@ void loop() {
     if (yoff < 0) { yoff += 7; }
     if (yoff >= 7) { yoff -= 7; }
   }
-  b.flip();
+}
+
+inline void donops() {
+    __asm__("nop\n\t");
+    __asm__("nop\n\t");
+    __asm__("nop\n\t");
+    __asm__("nop\n\t");
+    __asm__("nop\n\t");
 }
 
 ISR(TIMER1_COMPA_vect)
 {
   uint8_t row = curRow % 7;
-  //  uint8_t mask = 1 << (7-row);
-  //uint8_t* p = b.getDisplay();
   uint8_t* p = b.buildRowBuf(row);
   rowOff();
   for (int i = 0; i < columns; i++) {
-    digitalWrite(CLOCK_PIN,HIGH);
-    digitalWrite(DATA_PIN,(p[i]==0)?LOW:HIGH);
-    digitalWrite(CLOCK_PIN,LOW);
+    donops();
+    clockLow();
+    donops();
+    //if (p[i]==0) 
+    if ((i+row) % 2 == 0) { dataLow(); } else { dataHigh(); }
+    donops();
+    clockHigh();
+    donops();
   }
   rowOn(curRow%7);
   curRow++;
