@@ -192,7 +192,7 @@ void setup() {
   TCCR1A = 0b00000000;
   TCCR1B = 0b00001011;
   TIMSK1 = _BV(OCIE1A);
-  OCR1A = 500;
+  OCR1A = 200;
 
   Serial.begin(9600);
   Serial.println("Meet the press, suckers.");
@@ -202,14 +202,14 @@ void setup() {
 
 static unsigned int curRow = 0;
 
-#define CMD_SIZE 1024
+#define CMD_SIZE 256
 #define MESSAGE_TICKS (columns*20)
 static int message_timeout = 0;
 static char message[CMD_SIZE+1];
 static char command[CMD_SIZE+1];
 static int cmdIdx = 0;
 
-const static uint16_t DEFAULT_MSG_OFF = 0x10;
+const static uint16_t DEFAULT_MSG_OFF = 0x0;
 
 enum {
   CODE_OK = 0,
@@ -256,10 +256,10 @@ int8_t processCommand() {
 static int xoff = 0;
 static int yoff = 0;
 
-static int frames = 0;
+volatile static int frames = 0;
 
 void loop() {
-  while (false && frames < scroll_delay) {
+  while (frames < scroll_delay) {
     int nextChar = Serial.read();
     while (nextChar != -1) {
       if (nextChar == '\n') {
@@ -283,7 +283,7 @@ void loop() {
     if (message_timeout == 0) {
       // read message from eeprom
       uint8_t c = EEPROM.read(DEFAULT_MSG_OFF);
-      if (1 || c == 0xff) {
+      if (1) {
 	// Fallback if none written
 	b.writeStr(GREETING,xoff,yoff);
       } else {
@@ -293,13 +293,12 @@ void loop() {
 	  c = EEPROM.read(DEFAULT_MSG_OFF+idx);
 	}
 	message[idx] = '\0';
-	//b.writeStr(message,xoff,yoff);
+	b.writeStr(message,xoff,yoff);
       }
     } else {
       b.writeStr(message,xoff,yoff);
       message_timeout--;
     }
-    /*
     switch (dir) {
     case LEFT: xoff--; break;
     case RIGHT: xoff++; break;
@@ -311,13 +310,10 @@ void loop() {
     if (xoff >= columns) { xoff -= columns; }
     if (yoff < 0) { yoff += 7; }
     if (yoff >= 7) { yoff -= 7; }
-    */
   }
 }
 
 inline void donops() {
-    __asm__("nop\n\t");
-    __asm__("nop\n\t");
     __asm__("nop\n\t");
     __asm__("nop\n\t");
     __asm__("nop\n\t");
