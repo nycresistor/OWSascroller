@@ -36,10 +36,9 @@ inline void dataLow() {
   PORTD &= ~_BV(DATA_PIN);
 }
 
-#define GREETING "!s command to set default message"
+#define GREETING "default message"
 
 const static int columns = 120;
-const static int modules = 1;
 const static int rows = 7;
 
 static int active_row = -1;
@@ -62,7 +61,7 @@ typedef enum {
 } Mode;
 
 inline int rowPin(const int row) {
-  return ROW_START_PIN + row;
+  return ROW_START_PIN + rows - (row+1);
 }
 
 Mode mode = SCROLLING;
@@ -71,17 +70,19 @@ Direction dir = LEFT;
 // Scroll delay is in complete display refreshes per frame.
 int scroll_delay = 8;
 
-uint8_t b1[columns*modules];
-uint8_t rowbuf[columns];
+uint8_t b1[columns];
+uint8_t b2[columns];
 
 class Bitmap {
   uint8_t* data;
+  uint8_t* dsply;
 public:
   Bitmap() {
     data = b1;
+    dsply = b2;
   }
   void erase() {
-    for (int i = 0; i < columns*modules; i++) data[i] = 0;
+    for (int i = 0; i < columns; i++) data[i] = 0;
   }
   void writeStr(char* p, int x, int y) {
     while (*p != '\0') {
@@ -127,10 +128,10 @@ public:
     while (row != 1) {
       row = row >> y;
       if (wrap) {
-        x = x % (columns*modules);
-        if (x < 0) { x = x + columns*modules; }
+        x = x % columns;
+        if (x < 0) { x = x + columns; }
       }
-      if (x >= 0 && x < columns*modules) {
+      if (x >= 0 && x < columns) {
         data[x] = row | (data[x] & mask);
       }
       coff++;
@@ -139,20 +140,15 @@ public:
     }
     return x;
   }
-  
-  uint8_t* buildRowBuf(int row) {
-    uint8_t* p = getDisplay();
-    uint8_t mask = 1 << (7-row);
-    for (int i = 0; i < columns; i++) {
-      rowbuf[i] = 0;
-      if ( (p[i] & mask) != 0 ) {
-        rowbuf[i] |= 1<<1;
-      }
-    }
-    return rowbuf;
+  void flip() {
+    uint8_t* d;
+    cli();
+    d = dsply;
+    dsply = data;
+    data = d;
+    sei();
   }
-  
-  uint8_t* getDisplay() { return data; }
+  uint8_t* getDisplay() { return dsply; }
 };
 
 static Bitmap b;
@@ -175,6 +171,7 @@ inline void rowOn(int row) {
 
 void setup() {
   b.erase();
+  b.flip();
   for (int i = 0; i < rows; i++) {
     pinMode(rowPin(i),OUTPUT);
     digitalWrite(rowPin(i),LOW);
@@ -206,7 +203,7 @@ void setup() {
 static unsigned int curRow = 0;
 
 #define CMD_SIZE 1024
-#define MESSAGE_TICKS (modules*columns*20)
+#define MESSAGE_TICKS (columns*20)
 static int message_timeout = 0;
 static char message[CMD_SIZE+1];
 static char command[CMD_SIZE+1];
@@ -279,12 +276,14 @@ void loop() {
     }
   }
   frames = 0;
+  b.flip();
   b.erase();
   if (mode == SCROLLING) {
+    
     if (message_timeout == 0) {
       // read message from eeprom
       uint8_t c = EEPROM.read(DEFAULT_MSG_OFF);
-      if (c == 0xff) {
+      if (1 || c == 0xff) {
 	// Fallback if none written
 	b.writeStr(GREETING,xoff,yoff);
       } else {
@@ -294,12 +293,13 @@ void loop() {
 	  c = EEPROM.read(DEFAULT_MSG_OFF+idx);
 	}
 	message[idx] = '\0';
-	b.writeStr(message,xoff,yoff);
+	//b.writeStr(message,xoff,yoff);
       }
     } else {
       b.writeStr(message,xoff,yoff);
       message_timeout--;
     }
+    /*
     switch (dir) {
     case LEFT: xoff--; break;
     case RIGHT: xoff++; break;
@@ -307,10 +307,11 @@ void loop() {
     case DOWN: yoff++; break;
     }
 
-    if (xoff < 0) { xoff += modules*columns; }
-    if (xoff >= modules*columns) { xoff -= modules*columns; }
+    if (xoff < 0) { xoff += columns; }
+    if (xoff >= columns) { xoff -= columns; }
     if (yoff < 0) { yoff += 7; }
     if (yoff >= 7) { yoff -= 7; }
+    */
   }
 }
 
@@ -325,14 +326,17 @@ inline void donops() {
 ISR(TIMER1_COMPA_vect)
 {
   uint8_t row = curRow % 7;
-  uint8_t* p = b.buildRowBuf(row);
+  uint8_t* p = b.getDisplay();
+  uint8_t mask = 1 << (7-row);
+
   rowOff();
   for (int i = 0; i < columns; i++) {
     donops();
     clockLow();
     donops();
     //if (p[i]==0) 
-    if ((i+row) % 2 == 0) { dataLow(); } else { dataHigh(); }
+    if ((p[i] & mask) != 0) { dataHigh(); } else { dataLow(); }
+    //if ((i+row) % 2 == 0) { dataLow(); } else { dataHigh(); }
     donops();
     clockHigh();
     donops();
