@@ -38,7 +38,7 @@ inline void dataLow() {
 
 #define GREETING "default message"
 
-const static int columns = 120;
+const static int columns = 95;
 const static int rows = 7;
 
 static int active_row = -1;
@@ -94,6 +94,7 @@ public:
 
   int charWidth(char c) {
     if (c == ' ') return 2;
+    if ((c & 0x80) != 0) return (c & 0x7f);
     int coff = (int)c * 8;
     uint8_t row = pgm_read_byte(charData+coff);
     int width = 0;
@@ -121,6 +122,7 @@ public:
     int coff = (int)c * 8;
     uint8_t row = pgm_read_byte(charData+coff);
     if (c == ' ') return x+2;
+    if ((c & 0x80) != 0) return x + (c & 0x7f);
     if (row == 0) {
       return x;
     }
@@ -202,12 +204,12 @@ void setup() {
 
 static unsigned int curRow = 0;
 
-#define CMD_SIZE 256
+#define BUFFER_SIZE 512
 #define MESSAGE_TICKS (columns*20)
-static int message_timeout = 0;
-static char message[CMD_SIZE+1];
-static char command[CMD_SIZE+1];
-static int cmdIdx = 0;
+
+static char message[BUFFER_SIZE];
+static int buf_start = 0;
+static int buf_end = 0;
 
 const static uint16_t DEFAULT_MSG_OFF = 0x0;
 
@@ -216,89 +218,58 @@ enum {
   CODE_ERROR = -1
 };
 
-int8_t processCommand() {
-  if (command[0] == '!') {
-    // command processing
-    switch (command[1]) {
-    case 's':
-      // Set default string
-      for (int i = 2; i < CMD_SIZE+1; i++) {
-	EEPROM.write(DEFAULT_MSG_OFF-2+i,command[i]);
-	if (command[i] == '\0') break;
-      }
-      return CODE_OK;
-    case 'S':
-      // Get current scroller status
-      return CODE_OK;
-    case 'd':
-      switch (command[2]) {
-      case 'l': dir = LEFT; break;
-      case 'r': dir = RIGHT; break;
-      // Up and down have been disabled
-      case 'n': dir = NONE; break;
-      default:
-	return CODE_ERROR;
-      }
-      return CODE_OK;
-    }
-  } else {
-    // message
-    mode = SCROLLING;
-    message_timeout = MESSAGE_TICKS;
-    for (int i = 0; i < CMD_SIZE+1; i++) {
-      message[i] = command[i];
-      if (command[i] == '\0') break;
-    }
-    return CODE_OK;
-  }
-}
-
+static int xend = 0;
 static int xoff = 0;
 static int yoff = 0;
 
 volatile static int frames = 0;
 
 void loop() {
+  boolean spacer = true;
   while (frames < scroll_delay) {
     int nextChar = Serial.read();
-    while (nextChar != -1) {
-      if (nextChar == '\n') {
-        command[cmdIdx] = '\0';
-        processCommand();
-        cmdIdx = 0;
-        nextChar = -1;
-      } else {
-        command[cmdIdx] = nextChar;
-        cmdIdx++;
-        if (cmdIdx > CMD_SIZE) cmdIdx = CMD_SIZE;
-        nextChar = Serial.read();
+    if (spacer && nextChar != -1) {
+      spacer = false;
+      if (xend < columns) {
+        int w = (columns - xend);
+        if (w > columns) w = columns;
+        xend = columns;
+        message[buf_end] = 0x80 | w;
+        buf_end = (buf_end + 1)%BUFFER_SIZE;
+        if (buf_end == buf_start) {
+          buf_start = (buf_start+1)%BUFFER_SIZE;
+        }
       }
+    }
+    while (nextChar != -1) {
+      message[buf_end] = nextChar;
+      buf_end = (buf_end + 1)%BUFFER_SIZE;
+      if (buf_end == buf_start) {
+        buf_start = (buf_start+1)%BUFFER_SIZE;
+      }
+      Serial.write(nextChar);
+      nextChar = Serial.read();
     }
   }
   frames = 0;
   b.flip();
   b.erase();
   if (mode == SCROLLING) {
-    
-    if (message_timeout == 0) {
-      // read message from eeprom
-      uint8_t c = EEPROM.read(DEFAULT_MSG_OFF);
-      if (1) {
-	// Fallback if none written
-	b.writeStr(GREETING,xoff,yoff);
-      } else {
-	int idx = 0;
-	while (idx < CMD_SIZE && c != '\0' && c != 0xff) {
-	  message[idx++] = c;
-	  c = EEPROM.read(DEFAULT_MSG_OFF+idx);
-	}
-	message[idx] = '\0';
-	b.writeStr(message,xoff,yoff);
+    int s = buf_start;
+    int e = buf_end;
+    int x = xoff;
+    while (s != e) {
+      x = b.writeChar(message[s],x,yoff,false);
+      if (x < 0) {
+        // character can be removed from queue
+        buf_start = (buf_start + 1)%BUFFER_SIZE;
+        xoff = x + 1;
       }
-    } else {
-      b.writeStr(message,xoff,yoff);
-      message_timeout--;
+      x++;
+      s = (s+1)%BUFFER_SIZE;
     }
+    xend = x;
+    if (xend <= 0) { xend = 0; xoff = 0; }
     switch (dir) {
     case LEFT: xoff--; break;
     case RIGHT: xoff++; break;
@@ -306,7 +277,7 @@ void loop() {
     case DOWN: yoff++; break;
     }
 
-    if (xoff < 0) { xoff += columns; }
+    //if (xoff < 0) { xoff += columns; }
     if (xoff >= columns) { xoff -= columns; }
     if (yoff < 0) { yoff += 7; }
     if (yoff >= 7) { yoff -= 7; }
@@ -330,7 +301,6 @@ ISR(TIMER1_COMPA_vect)
     donops();
     clockLow();
     donops();
-    //if (p[i]==0) 
     if ((p[i] & mask) != 0) { dataHigh(); } else { dataLow(); }
     //if ((i+row) % 2 == 0) { dataLow(); } else { dataHigh(); }
     donops();
